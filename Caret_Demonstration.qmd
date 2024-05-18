@@ -1,27 +1,147 @@
 ---
-title: "Machine Learning with Caret"
+title: "Machine Learning Pipelines and Model Building in Caret"
 author: "Sebastian Santana Ortiz"
-format: html
+format:
+  gfm:
+    toc: true
+    toc-depth: 3
+    execute:
+      warning: false
 editor: visual
 ---
 
-## Quarto
+The purpose of this file is to provide a quick demonstration on how to set up a machine learning pipeline and build a set of predictive models using the [caret package](https://topepo.github.io/caret/index.html) in R.
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+The text below will be split into three sections:
 
-## Running Code
+1.  Set up & Data management
+2.  Building a pipeline
+3.  Building models
+4.  Testing models
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+Note that the data used for this demonstration is from the [Kaggle competition](https://www.kaggle.com/competitions/titanic/overview) "**Titanic - Machine Learning from Disaster",** a beginner friendly dataset that is commonly used for demonstration purposes.
 
-```{r}
-1 + 1
+## Set up & Data Management
+
+```{r loading_libraries, warning=FALSE}
+
+# Load required packages
+library(caret)
+library(caretEnsemble)
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(kableExtra)
+library(skimr)
 ```
 
-You can add options to executable code like this
+The data provided in the Kaggle challenge is already split for us into a training and testing set. Our first objective is to understand the types of features/factors we have access to in the training set.
 
-```{r}
-#| echo: false
-2 * 2
+```{r load_data, warning=FALSE}
+
+# Load training and testing DFs
+train_raw = fread('./Data/train.csv')
+test_raw = fread('./Data/test.csv')
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+According to the data set description the following variables should be present in the training set.
+
+|              |                                             |                                                |
+|:------------:|:-------------------------------------------:|:----------------------------------------------:|
+| **Variable** |               **Description**               |                    **Key**                     |
+|   survival   |                  Survival                   |                0 = No, 1 = Yes                 |
+|    pclass    |                Ticket class                 |           1 = 1st, 2 = 2nd, 3 = 3rd            |
+|     sex      |                     Sex                     |                                                |
+|     Age      |                Age in years                 |                                                |
+|    sibsp     | \# of siblings / spouses aboard the Titanic |                                                |
+|    parch     | \# of parents / children aboard the Titanic |                                                |
+|    ticket    |                Ticket number                |                                                |
+|     fare     |               Passenger fare                |                                                |
+|    cabin     |                Cabin number                 |                                                |
+|   embarked   |             Port of Embarkation             | C = Cherbourg, Q = Queenstown, S = Southampton |
+
+```{r summary_of_train_char, warning=FALSE}
+
+# Quick summary of character features training set
+
+kable(summary(train_raw%>%
+                select_if(is.character)))
+
+# Note: we should only look at the testing set once and only once (i.e., when we test the final model)
+        
+```
+
+```{r summary_of_train_not_char, warning=FALSE}
+
+# Quick summary of all other features in training set
+
+kable(summary(train_raw%>%
+                select_if(~! is.character(.))))
+
+# Note: we should only look at the testing set once and only once (i.e., when we test the final model)
+
+```
+
+Note above that based on the raw data needs to be modified before we use them to build our models.
+
+-   The "pclass" variable needs to be relabeled as *factor*.
+
+    -   Survival on the other can be left as a binary variable. In this case, our models will be able to predict the probability of survival and this can easily be turned into a binary variable later on (e.g., all predictions above .5 are relabeledto 1 or "survived").
+
+-   I will also remove passenger ID, this variable can be brought back later on but should not have any predictive capacity.
+
+```{r raw_data_manipulation}
+
+# Note that at this point I am only recoding or removing variables. Centering will take place later on.
+
+train = train_raw%>%
+  select(-PassengerId)%>%
+  mutate(Pclass = as.factor(Pclass))
+
+test = test_raw%>%
+  select(-PassengerId)%>%
+  mutate(Pclass = as.factor(Pclass))
+
+```
+
+## Building pipeline
+
+Pipelines are necessary tools in machine learning that organize and standardize sequential transformations to a set of features/factors. They can ensure that both the training and test sets have the *exact same operations done*.
+
+It is worth noting that in machine learning, there is a crucial principle: no information from the testing fold should bleed into our prediction model. If we were to center our features on the *global average* (including observations from the training and testing folds) before splitting the data, then our model would have information on the testing set even if it only trained on the training observations.
+
+Hence, when we center variables, we should only use values from the training set. Then, we can apply those transformations to the test set.
+
+### Splitting data
+
+In this specific case, the data is already split for us. However, in case there would be a need to split the data, the code below would result in a training data set and test data set.
+
+```{r hypothetical_test_split}
+
+# This step is crucial to ensure reporudicbility when splitting data
+set.seed(101) 
+
+# This example code is further splitting the train dataset into exampple folds
+# Create a 75% and 25% split
+intrain = createDataPartition(y=train$Survived, p=0.75, list=FALSE)
+example_75_fold = train[intrain,]; train$Survived = as.factor(train$Survived)
+example_25_fold = train[-intrain,]; train$Survived = as.factor(train$Survived)
+
+
+```
+
+```{r deleting_hypothetical, echo=FALSE}
+
+rm(example_75_fold)
+rm(example_25_fold)
+```
+
+### Pipeline Building
+
+In this case, we have both numeric and character variables. Hence, we will have to apply at least two types of transformation: scaling (centering all variables around the mean) and dummy coding (binarizing categorical variables based on unique categories). There are many other forms of transformations designed to reduce skew, normalize distributions, make features linearly separable, and more. For this demonstration, I will not be using this advanced techniques but it is worth acknowledging they exist.
+
+Additionally, in this case we do have missing data in the age feature. As part of the pipeline, we will need to specify how we want to manage these missing entries. For the purposes of this simple demonstration, I will impute the training average for age. Note that there are far more advance means of managing messing data but for the sake of simplicity I will only impute the mean.
+
+## Building models
+
+## Testing models
