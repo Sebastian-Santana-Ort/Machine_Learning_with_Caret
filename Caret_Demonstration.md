@@ -7,7 +7,6 @@ Sebastian Santana Ortiz
   - [Pipeline Building](#pipeline-building)
 - [Building models](#building-models)
 - [Testing models](#testing-models)
-- [Required Packages](#required-packages)
 
 The purpose of this file is to provide a quick demonstration on how to
 set up a machine learning pipeline and build a set of predictive models
@@ -40,8 +39,8 @@ library(skimr)
 ```
 
 The data provided in the Kaggle challenge is already split for us into a
-training and testing set. The next step is to understand the types of
-features/factors we have access to in the training set.
+training and testing set. Our first objective is to understand the types
+of features/factors we have access to in the training set.
 
 ``` r
 # Load training and testing DFs
@@ -67,38 +66,46 @@ present in the training set.
 |   embarked   |             Port of Embarkation             | C = Cherbourg, Q = Queenstown, S = Southampton |
 
 ``` r
-# Quick summary of training set
+# Quick summary of character features training set
 
-kable(summary(train_raw%>%
-                select_if(is.character)))
+skimr::skim(train_raw)%>%
+  yank("character")%>%
+  select(-complete_rate, -whitespace, -min,-max)
 ```
 
-|     | Name             | Sex              | Ticket           | Cabin            | Embarked         |
-|:----|:-----------------|:-----------------|:-----------------|:-----------------|:-----------------|
-|     | Length:891       | Length:891       | Length:891       | Length:891       | Length:891       |
-|     | Class :character | Class :character | Class :character | Class :character | Class :character |
-|     | Mode :character  | Mode :character  | Mode :character  | Mode :character  | Mode :character  |
+**Variable type: character**
+
+| skim_variable | n_missing | empty | n_unique |
+|:--------------|----------:|------:|---------:|
+| Name          |         0 |     0 |      891 |
+| Sex           |         0 |     0 |        2 |
+| Ticket        |         0 |     0 |      681 |
+| Cabin         |         0 |   687 |      148 |
+| Embarked      |         0 |     2 |        4 |
 
 ``` r
 # Note: we should only look at the testing set once and only once (i.e., when we test the final model)
 ```
 
 ``` r
-# Quick summary of training set
+# Quick summary of all other features in training set
 
-kable(summary(train_raw%>%
-                select_if(~! is.character(.))))
+skimr::skim(train_raw)%>%
+  yank("numeric")%>%
+  select(-hist)
 ```
 
-|     | PassengerId   | Survived       | Pclass        | Age           | SibSp         | Parch          | Fare           |
-|:----|:--------------|:---------------|:--------------|:--------------|:--------------|:---------------|:---------------|
-|     | Min. : 1.0    | Min. :0.0000   | Min. :1.000   | Min. : 0.42   | Min. :0.000   | Min. :0.0000   | Min. : 0.00    |
-|     | 1st Qu.:223.5 | 1st Qu.:0.0000 | 1st Qu.:2.000 | 1st Qu.:20.12 | 1st Qu.:0.000 | 1st Qu.:0.0000 | 1st Qu.: 7.91  |
-|     | Median :446.0 | Median :0.0000 | Median :3.000 | Median :28.00 | Median :0.000 | Median :0.0000 | Median : 14.45 |
-|     | Mean :446.0   | Mean :0.3838   | Mean :2.309   | Mean :29.70   | Mean :0.523   | Mean :0.3816   | Mean : 32.20   |
-|     | 3rd Qu.:668.5 | 3rd Qu.:1.0000 | 3rd Qu.:3.000 | 3rd Qu.:38.00 | 3rd Qu.:1.000 | 3rd Qu.:0.0000 | 3rd Qu.: 31.00 |
-|     | Max. :891.0   | Max. :1.0000   | Max. :3.000   | Max. :80.00   | Max. :8.000   | Max. :6.0000   | Max. :512.33   |
-|     | NA            | NA             | NA            | NA’s :177     | NA            | NA             | NA             |
+**Variable type: numeric**
+
+| skim_variable | n_missing | complete_rate |   mean |     sd |   p0 |    p25 |    p50 |   p75 |   p100 |
+|:--------------|----------:|--------------:|-------:|-------:|-----:|-------:|-------:|------:|-------:|
+| PassengerId   |         0 |           1.0 | 446.00 | 257.35 | 1.00 | 223.50 | 446.00 | 668.5 | 891.00 |
+| Survived      |         0 |           1.0 |   0.38 |   0.49 | 0.00 |   0.00 |   0.00 |   1.0 |   1.00 |
+| Pclass        |         0 |           1.0 |   2.31 |   0.84 | 1.00 |   2.00 |   3.00 |   3.0 |   3.00 |
+| Age           |       177 |           0.8 |  29.70 |  14.53 | 0.42 |  20.12 |  28.00 |  38.0 |  80.00 |
+| SibSp         |         0 |           1.0 |   0.52 |   1.10 | 0.00 |   0.00 |   0.00 |   1.0 |   8.00 |
+| Parch         |         0 |           1.0 |   0.38 |   0.81 | 0.00 |   0.00 |   0.00 |   0.0 |   6.00 |
+| Fare          |         0 |           1.0 |  32.20 |  49.69 | 0.00 |   7.91 |  14.45 |  31.0 | 512.33 |
 
 ``` r
 # Note: we should only look at the testing set once and only once (i.e., when we test the final model)
@@ -114,18 +121,18 @@ them to build our models.
     and this can easily be turned into a binary variable later on (e.g.,
     all predictions above .5 are relabeledto 1 or “survived”).
 
-- I will also remove passenger ID, this variable can be brought back
-  later on but should not have any predictive capacity.
+- I will also remove passenger ID and name, this variable can be brought
+  back later on but should not have any predictive capacity.
 
 ``` r
-# Note that at this point I am only recoding or removing variables. Centering will take place later on.
+# Note that at this point I am only recoding or removing variables. Centering and imputation will take place later on.
 
 train = train_raw%>%
-  select(-PassengerId)%>%
+  select(-PassengerId, -Name)%>%
   mutate(Pclass = as.factor(Pclass))
 
 test = test_raw%>%
-  select(-PassengerId)%>%
+  select(-PassengerId, -Name)%>%
   mutate(Pclass = as.factor(Pclass))
 ```
 
@@ -168,18 +175,19 @@ example_25_fold = train[-intrain,]; train$Survived = as.factor(train$Survived)
 In this case, we have both numeric and character variables. Hence, we
 will have to apply at least two types of transformation: scaling
 (centering all variables around the mean) and dummy coding (binarizing
-categorical variables based on unique categories).
+categorical variables based on unique categories). There are many other
+forms of transformations designed to reduce skew, normalize
+distributions, make features linearly separable, and more. For this
+demonstration, I will not be using this advanced techniques but it is
+worth acknowledging they exist.
 
-In this case we do not have missing data, so there is no need for
-imputation. However, if it was needed imputation (or some equivalent)
-would be done at this point. Additionally, there are many other forms of
-transformations designed to reduce skew, normalize distributions, make
-features linearly separable, and more. For this demonstration, I will
-not be using this advanced techniques but it is worth acknowledging they
-exist.
+Additionally, in this case we do have missing data in the age feature.
+As part of the pipeline, we will need to specify how we want to manage
+these missing entries. For the purposes of this simple demonstration, I
+will impute the training average for age. Note that there are far more
+advance means of managing messing data but for the sake of simplicity I
+will only impute the mean.
 
 ## Building models
 
 ## Testing models
-
-## Required Packages
