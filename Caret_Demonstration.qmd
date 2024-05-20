@@ -243,7 +243,7 @@ Based on the print out above, it is clear that only the continuous features were
 
 ------------------------------------------------------------------------
 
-### Dummy variables 
+### Dummy variables
 
 Dummy variables are binary encodings of categorical variables. In this example, Embarked had three categories. In order for this feature to be used we need to create a binary variable for each individual category that was present in the original variable. This need for dummy coding is why we removed variables such as Ticket and Cabin. For every unique value they had (e.g., 681 for Ticket) a new and unique variable would have to be created with only 0 (for not present) or 1 (present) for each category.
 
