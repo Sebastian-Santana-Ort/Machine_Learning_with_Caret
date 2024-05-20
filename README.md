@@ -2,7 +2,7 @@
 
 The purpose of this project is to demonstrate how to build a machine learning pipeline and train a predictive model in R using the [caret package](https://topepo.github.io/caret/index.html). For the purposes of this simple demonstration, I used data from the [Titanic prediction](https://www.kaggle.com/competitions/titanic/overview) competition in Kaggle.
 
-In the end, I was able to build a series of models and compare their ability to predict accurately whether a passenger in the Titanic would survive or not. The final model selected (k-Nearest Neighbors) predicted survival with an accuracy of 80%
+In the end, I was able to build a series of models and compare their ability to predict accurately whether a passenger in the Titanic would survive or not. The final model selected (k-Nearest Neighbors) predicted survival with 80% accuracy.
 
 ![alt_text](https://github.com/Sebastian-Santana-Ort/Machine_Learning_with_Caret/blob/main/Caret_Demonstration_files/figure-commonmark/unnamed-chunk-3-1.png?raw=true)
 
