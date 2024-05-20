@@ -475,9 +475,9 @@ resamps$timings%>%
 ```
 
                   Everything FinalModel
-    Bayesian_GLM        0.58       0.02
-    Random_Forest      19.61       0.28
-    kNN                 8.38       0.11
+    Bayesian_GLM        0.61       0.02
+    Random_Forest      18.91       0.28
+    kNN                 8.52       0.13
 
 ``` r
 summary(resamps)
