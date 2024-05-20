@@ -7,7 +7,7 @@ In the end, I was able to build a series of models and compare their ability to 
 ![alt_text](https://github.com/Sebastian-Santana-Ort/Machine_Learning_with_Caret/blob/main/Caret_Demonstration_files/figure-commonmark/unnamed-chunk-3-1.png?raw=true)
 
 In this project, you will be able to find the following:
-- Markdown file documenting the entire process of loading data, building a machine learning pipeline, training a series of models (using cross-validation to tune hyperparameters), comparing models based on their accuracy, and evaluating the performance of the final model against the testing dataset.
+- Markdown file named "Caret_Demonstration.md" You should _open this file first_ as it provides a comprehensive explanation of the entire process of loading data, building a machine learning pipeline, training a series of models (using cross-validation to tune hyperparameters), comparing models based on their accuracy, and evaluating the performance of the final model against the testing dataset.
 - Quarto markdown file named "Caret_Demonstration.qmd"
 - An R project file "Machine_Learning_with_Caret.Rproj", this file will allow you set up your working environment and should be set up first if you are looking to replicate my work.
 - Lastly, you will find two folders. The "Data" folder contains the original data I downloaded from Kaggle. The "Caret_Demonstration_files" contains the images made when rendering the markdown file in Quarto.
