@@ -33,16 +33,45 @@ library(tidyr)
 library(dplyr)
 library(kableExtra)
 library(skimr)
+
+# Model-specific libraries
+library(kknn)
+library(arm)
+library(caTools)
 ```
 
-The data provided in the Kaggle challenge is already split for us into a training and testing set. Our first objective is to understand the types of features/factors we have access to in the training set.
+Our first objectives are to split the data and to understand the types of features/factors we have access to in the training set.
 
 ```{r load_data, warning=FALSE}
 
-# Load training and testing DFs
-train_raw = fread('./Data/train.csv')
-test_raw = fread('./Data/test.csv')
+# Load titanic dataset already split by kaggle
+train_read = fread('./Data/train.csv')
 ```
+
+### Splitting data
+
+In machine learning, there is a crucial principle: no information from the testing fold should bleed into our prediction set. If we were to center our features on the *global average* (including observations from the training and testing folds) before splitting the data, then our model would have information on the testing set even if it only trained on the training observations.
+
+Hence, when we center variables, we should only use values from the training set. Then, we can apply those transformations to the test set.
+
+```{r train_test_split}
+
+# This step is crucial to ensure reporudicbility when splitting data
+set.seed(101) 
+
+# This section of code randomly seletcs 75% of the entries in the original dataset, these will be included in the training set
+intrain = createDataPartition(y=train_read$Survived, p=0.75, list=FALSE)
+
+# Subsets data based and creates testing and training folds
+train_raw = 
+  train_read[intrain,]; train_read$Survived = as.factor(train_read$Survived)
+test_raw = 
+  train_read[-intrain,]; train_read$Survived = as.factor(train_read$Survived)
+
+
+```
+
+### Understanding Feature Types & Exploratory Data Analysis
 
 According to the data set description the following variables should be present in the training set.
 
@@ -66,7 +95,7 @@ According to the data set description the following variables should be present 
 
 skimr::skim(train_raw)%>%
   yank("character")%>%
-  select(-complete_rate, -whitespace, -min,-max)
+  dplyr::select(-min, -max, -whitespace, -complete_rate)
 
 # Note: we should only look at the testing set once and only once (i.e., when we test the final model)
         
@@ -78,19 +107,19 @@ skimr::skim(train_raw)%>%
 
 skimr::skim(train_raw)%>%
   yank("numeric")%>%
-  select(!(p0:hist))
+  dplyr::select(!(p0:hist))
 
 # Note: we should only look at the testing set once and only once (i.e., when we test the final model)
 
 ```
 
-Note above that based on the raw data needs to be modified before we use them to build our models.
+Based on the brief exploratory analaysis done above, it is clear that the raw data needs to be modified before being used build our models.
 
 -   The "pclass" variable needs to be relabeled as *factor*.
 
     -   Survival on the other can be left as a binary variable. In this case, our models will be able to predict the probability of survival and this can easily be turned into a binary variable later on (e.g., all predictions above .5 are relabeledto 1 or "survived").
 
--   The variables Ticket and Cabin have a large number of categories, more than likely with few entries per category. It could be possible that these variables could be grouped (e.g., most expensive cabins, or tickets of specific families). These variables will be removed for the time being.
+-   The variables Ticket and Cabin have a large number of categories, more than likely with few entries per category. Future attempts could find some data-driven or conceptual reason to group entries for these features (e.g., most expensive cabins, or tickets of specific families). However, for the sake of simplicity these variables will be removed for the time being.
 
 -   I will also remove passenger ID and name, this variable can be brought back later on but should not have any predictive capacity.
 
@@ -99,55 +128,35 @@ Note above that based on the raw data needs to be modified before we use them to
 # Note that at this point I am only recoding or removing variables. Centering and imputation will take place later on.
 
 train = train_raw%>%
-  select(-PassengerId, -Name, -Ticket, -Cabin)%>%
-  mutate(Pclass = as.factor(Pclass),
+  dplyr::select(-PassengerId, -Name, -Ticket, -Cabin)%>%
+  dplyr::mutate(Pclass = as.factor(Pclass),
          Survived = as.factor(Survived))%>%
-  mutate_if(is.character, as.factor)
+  dplyr::mutate_if(is.character, as.factor)
 
 test = test_raw%>%
-  select(-PassengerId, -Name, -Ticket, -Cabin)%>%
-  mutate(Pclass = as.factor(Pclass))%>%
-  mutate_if(is.character, as.factor)
+  dplyr::select(-PassengerId, -Name, -Ticket, -Cabin)%>%
+  dplyr::mutate(Pclass = as.factor(Pclass),
+         Survived = as.factor(Survived))%>%
+  dplyr::mutate_if(is.character, as.factor)
 ```
 
 ## Building pipeline
 
 Pipelines are necessary tools in machine learning that organize and standardize sequential transformations to a set of features/factors. They can ensure that both the training and test sets have the *exact same operations done*.
 
-It is worth noting that in machine learning, there is a crucial principle: no information from the testing fold should bleed into our prediction model. If we were to center our features on the *global average* (including observations from the training and testing folds) before splitting the data, then our model would have information on the testing set even if it only trained on the training observations.
+In this case, our pipeline needs to manage two issues:
 
-Hence, when we center variables, we should only use values from the training set. Then, we can apply those transformations to the test set.
+-   **Missing data**: We will use imputation to manage missing entries in Age and Embarked features.
 
-### Splitting data
+-   **Different feature types**: We have both numeric and character variables. Hence, we will have to apply at least two types of transformations: numeric (e.g., centering and scaling) and categorical (e.g., dummy coding).
 
-In this specific case, the data is already split for us. However, in case there would be a need to split the data, the code below would result in a training data set and test data set.
+    -   There are **many other forms** of transformations (e.g., log, square root, kernel, binning, and more). I will not be using these advanced techniques for the sake of simplicity.
 
-```{r hypothetical_test_split}
+------------------------------------------------------------------------
 
-# This step is crucial to ensure reporudicbility when splitting data
-set.seed(101) 
+### Imputation
 
-# This example code is further splitting the train dataset into exampple folds
-# Create a 75% and 25% split
-intrain = createDataPartition(y=train$Survived, p=0.75, list=FALSE)
-example_75_fold = train[intrain,]; train$Survived = as.factor(train$Survived)
-example_25_fold = train[-intrain,]; train$Survived = as.factor(train$Survived)
-
-
-```
-
-```{r deleting_hypothetical, echo=FALSE}
-
-rm(example_75_fold)
-rm(example_25_fold)
-rm(intrain)
-```
-
-### Pipeline Building
-
-In this case, we have both numeric and character variables. Hence, we will have to apply at least two types of transformation: scaling (centering all variables around the mean) and dummy coding (binarizing categorical variables based on unique categories). There are many other forms of transformations designed to reduce skew, normalize distributions, make features linearly separable, and more. For this demonstration, I will not be using this advanced techniques but it is worth acknowledging they exist.
-
-Additionally, in this case we do have missing data in the Age and Embarked feature. As part of the pipeline, we will need to specify how we want to manage these missing entries. For the purposes of this simple demonstration, I will impute the training average for Age and the most common entry for Embarked. However, note that there are far more advance means of managing messing data but for the sake of simplicity I will only impute simple values here.
+For the sake of simplicity, I will only impute simple values here. I will impute the average for Age and the most common entry for Embarked in the *training set*. However, note that there are far more advance means of managing missing data. For example, the preProcess function itself is able to use a K-Nearest Neighbors regression model to impute values.
 
 ```{r}
 # Imputation for age and embarked
@@ -162,8 +171,8 @@ factor_counts <- table(train$Embarked)
 mode_train_Embark <- names(factor_counts[factor_counts == max(factor_counts)])
 
 
-train = train%>%
-  mutate(
+train_imputed = train%>%
+  dplyr::mutate(
     # Imputing missing cases (which were actually "" in the data as the mode)
     Imputed_Embark = case_when(
       Embarked == "" ~ mode_train_Embark,
@@ -171,10 +180,11 @@ train = train%>%
     # Impute the mean of Age (training) to all entries with missing values
     Imputed_Age = ifelse(
       is.na(Age), mean(train$Age, na.rm = TRUE), Age
-    ))
+    ))%>%
+  dplyr::select(-Embarked, -Age)
 
-test = test%>%
-  mutate(
+test_imputed = test%>%
+  dplyr::mutate(
     # Imputing missing cases (which were actually "" in the data as the mode)
     Imputed_Embark = case_when(
       Embarked == "" ~ mode_train_Embark,
@@ -182,18 +192,220 @@ test = test%>%
     # Impute the mean of Age (training) to all entries with missing values
     Imputed_Age = ifelse(
       is.na(Age), mean(train$Age, na.rm = TRUE), Age
-    ))
+    ))%>%
+  dplyr::select(-Embarked, -Age)
 ```
 
-Check back here for [what's next](https://topepo.github.io/caret/pre-processing.html):
+------------------------------------------------------------------------
 
-```{r pipeline_building}
+### Numeric variable transformation
 
-dummies <- dummyVars(Survived ~ ., data = train)
-head(predict(dummies, newdata = train))
+Scaling is a useful tool that helps us ensure all predictors are based on the same unit (i.e., centered on the mean and divided by the standard deviation. In this example I am only using four [preProcess methods](https://www.rdocumentation.org/packages/caret/versions/6.0-92/topics/preProcess): centering, scaling, removing variables with zero variance, and removing highly correlated features. However, note that there are many more options available.
 
+```{r creating_preprocessor}
+
+# Defining pre-processor
+pre_processor = preProcess(
+  # "Training" our preprocessor on the training gata
+  train_imputed,
+  # Specifies transformations to continuous data
+  method = c(
+    # Substracts the mean fro every entry
+    "center",
+    # Divides entries by the standard deviation
+    "scale",
+    # Removes features with near zero variance 
+    "nzv",
+    # Removes highly correlated variables (removes variable with largest mean absolute correlation)
+    "corr"))
+```
+
+```{r before_scaling, echo=FALSE, results='asis'}
+
+knitr::kable(head(train_imputed), caption = "Before Scaling")
+```
+
+```{r fitting_preprocessor}
+
+# Transforms data in training
+train_scaled <- predict(pre_processor, train_imputed)
+
+# Transforms data in testing, based on preprocessor fitted on training
+test_scaled <- predict(pre_processor, test_imputed)
+```
+
+```{r after_scaling, echo=FALSE, results='asis'}
+
+knitr::kable(head(train_scaled), caption = "After Scaling")
+```
+
+Based on the print out above, it is clear that only the continuous features were scaled (i.e., "SibSp", "Parch", "Fare", and "Imputed_Age"). As well, all four features were retained suggesting they do have sufficient variances and are not correlated to each other. The next step now is to transform the factor variables.
+
+------------------------------------------------------------------------
+
+### Dummy variables 
+
+Dummy variables are binary encodings of categorical variables. In this example, Embarked had three categories. In order for this feature to be used we need to create a binary variable for each individual category that was present in the original variable. This need for dummy coding is why we removed variables such as Ticket and Cabin. For every unique value they had (e.g., 681 for Ticket) a new and unique variable would have to be created with only 0 (for not present) or 1 (present) for each category.
+
+```{r before_dummy_coding, echo=FALSE, results='asis'}
+
+knitr::kable(head(train_scaled), caption = "Before Dummy Coding")
+```
+
+```{r dummy_variables}
+
+# The code below uses the dummyVars function from the caret package to build a model.matrix
+
+# Ensure outcome variables are ordered factors
+train_scaled$Survived = factor(train_scaled$Survived, levels = c(0,1))
+test_scaled$Survived = factor(test_scaled$Survived, levels = c(0,1))
+
+
+# Creates Matrix with new Variables
+dmy_train = dummyVars(" ~ .", data = train_scaled, fullRank = T)
+# Fits to training set
+train_transformed <- data.frame(predict(dmy_train, newdata = train_scaled))
+train_transformed$Survived.1 = factor(train_transformed$Survived.1, levels = c(0,1))
+
+# Same applied to testing set
+dmy_test = dummyVars(" ~ .", data = test_scaled, fullRank = T)
+test_transformed <- data.frame(predict(dmy_test, newdata = test_scaled))
+test_transformed$Survived.1 = factor(test_transformed$Survived.1, levels = c(0,1))
+```
+
+```{r after_dummy_coding, echo=FALSE, results='asis'}
+
+knitr::kable(head(data.frame(train_transformed)), caption = "After Dummy Coding")
 ```
 
 ## Building models
 
-## Testing models
+It is worth noting that caret is able to accommodate a *very large* number of machine learning models. In this case I will only test the capabilities of three: Bayesian Generalized Linear Model (bayesglm), Random Forest (rf), and k-Nearest Neighbors, or *kNN*, (kknn).
+
+These three models are able to accommodate classification problems, which is the case in this example. For more information, see the [caret documentation](https://topepo.github.io/caret/available-models.html)or use the command getModelInfo() to see more.
+
+### Fitting & hyperparameter tuning
+
+Hyperparameters are model-specific characteristics that can be altered to optimize model fit. For the sake of simplicity, I will only specify a 5-fold cross-validation but note that caret does accommodate [model-specific hyperparameter grids](https://topepo.github.io/caret/model-training-and-tuning.html#basic-parameter-tuning).
+
+```{r cross_validation}
+fitControl <- trainControl(# 5-fold CV
+                           method = "repeatedcv",
+                           # number of folds
+                           number = 5,
+                           # repeated ten times
+                           repeats = 5)
+```
+
+> Bayesian Generalized Linear Model
+
+```{r bayes_classification}
+
+set.seed(1231)
+
+bayesglm_T = train(Survived.1 ~ ., data = train_transformed, 
+                 method = "bayesglm", 
+                 trControl = fitControl)
+```
+
+> Random Forest
+
+```{r logit_boost}
+
+set.seed(1231)
+
+rf_T = train(Survived.1 ~ ., data = train_transformed, 
+                 method = "rf", 
+                 trControl = fitControl)
+```
+
+> k-Nearest Neighbors
+
+```{r kNN_Train}
+
+set.seed(1231)
+
+kNN_T = train(Survived.1 ~ ., data = train_transformed, 
+                 method = "kknn", 
+                 trControl = fitControl)
+```
+
+> Contrast: accuracy as a function of max neighbors in both Random Forest and kNN
+
+```{r plot_logit_boost}
+# First plot: LogitBoost
+plot(rf_T, metric = "Accuracy")  
+
+```
+
+```{r plot_knn}
+# Second plot: kNN
+plot(kNN_T, metric = "Accuracy")  
+```
+
+From the graphs above, it is clear that over our cross-validation we were able to explore a sufficient range for model hyperparameters. For example, for kNN. It is clear that the model does not gain any accuracy from using more than 7 nearest neighbors when making a prediction.
+
+Now that all models have been fitted, the next step is to compare them all and identify the best classification model among the three fitted models.
+
+## Comparing models and testing
+
+The caret package has some functionality to use resampling distributions to compare the efficacy of trained machine learning models.
+
+```{r resamps}
+set.seed(1231)
+resamps <- resamples(list(Bayesian_GLM = bayesglm_T,
+                          Random_Forest = rf_T,
+                          kNN = kNN_T))
+resamps$timings%>%
+  dplyr::select(-Prediction)
+```
+
+```{r}
+summary(resamps)
+```
+
+```{r comparing_models}
+
+bwplot(resamps, layout = c(3, 1))
+```
+
+```{r, warning=FALSE}
+trellis.par.set(caretTheme())
+dotplot(resamps, metric = "Accuracy")
+```
+
+Based on the plots above, three things are clear:
+
+1.  The Bayesian Generalized Linear Model, as fitted, is underperfoming the kNN and Random Forest models .
+
+2.  The Random Forst model took the longest to train, with kNN trailing behind and the BGLM model being the fastest.
+
+3.  Based on the dotplot and descriptive summary, it seems that the difference between kNN and Random Forest is quite small. However, kNN looks like it has a smaller range between its maximum and minimum accuracy, suggesting it is less likely to be overfit.
+
+### Model choice
+
+Based on these findings, among the three models, it seems that kNN with k = 7 is the optimal model.
+
+```{r}
+summary(kNN_T$finalModel)
+```
+
+It is worth noting that for other models, it is possible to visualize variable importance in Caret. However, kNN's algorithm does place special importance on any feature when making a prediction. In the example below, the code computes variable importance for the random forest model and plots them (remember that importance does not speak to directionality of the effect on the outcome).
+
+```{r}
+var_imp <- varImp(rf_T, scale = FALSE)
+plot(var_imp)
+```
+
+### Final model on test set
+
+Note that this model was built with default settings for optimization. There are a number of metrics that could be considered (e.g., Sensitivity, Specificty, ROC, AUC, Fal-Positive Rate, and more). However, for this purpuse (specially because we did not see a serious class imbalance in the outcome) I only focused on accuracy.
+
+```{r prediction}
+# Predict here is used to create predictions based on our trained model
+predictions = predict(kNN_T, newdata = test_transformed)
+
+confusionMatrix(data = predictions, reference = test_transformed$Survived.1)
+```
+
+The accuracy reported above is fairly consistent and suggests that our kNN model is not over-fit on our training set. There are still may other modeling techniques (e.g., DBSCAN, SVM, Extreme Gradient Boosted trees, ensemble models, Generalized Linear Models, and more) and further operations (e.g., more precise feature-engineering or hyper-parameter tuning). However, we can feel satisfaction in knowing that we have built and tested a machine learning model in R using Caret!
