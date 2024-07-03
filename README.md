@@ -1,4 +1,4 @@
-# Machine_Learning_with_Caret
+# Machine Learning with Caret
 
 The purpose of this project is to demonstrate how to build a machine learning pipeline and train a predictive model in R using the [caret package](https://topepo.github.io/caret/index.html). For the purposes of this simple demonstration, I used data from the [Titanic prediction](https://www.kaggle.com/competitions/titanic/overview) competition in Kaggle.
 
